@@ -1,0 +1,181 @@
+﻿@{
+    Layout = "~/Views/Shared/_Layout.cshtml";
+}
+    <div class="input-group input-group-lg">
+        <span class="input-group-btn">
+            <button id="startButton" class="btn-head" onclick="startNewGame();" type="button">Start new game</button>
+        </span>
+        <span class="input-group-btn">
+            <button id="playerButton" class="btn-head btn-player x" onclick="changePlayer();" type="button"></button>
+        </span>
+    </div>
+
+    <div class="message">
+
+    </div>
+
+    <script>
+        var player = true;
+        var cells = ['e', 'x', 'o'];
+        var css = ['x', 'o', 'pvp'];
+        var mode = 0;
+        var isFinished = false;
+        var gameStarted = false;
+        var movesArray;
+        $('[id="startButton"]').prop('disabled', true);
+
+        var hub = $.connection.gameHub;
+        $.connection.hub.start().done(function () {
+            $('[id="startButton"]').prop('disabled', false);
+
+            var get = getParameterByName('replay');
+            if (get != null) {
+                isFinished = true;
+                $('.replay').css("visibility", "visible");
+
+                hub.server.requestReplay(get);
+            }
+        });
+
+        window.onload = function () {
+            //Подгоняем размеры
+            $('.gameboard').css({ 'height': $('.gameboard').width() + 'px' });
+
+            //Создаём поле
+            for (var i = 0; i < 9; i++) {
+                var div = document.createElement('div');
+                div.className = 'chip';
+                var button = document.createElement('button');
+                button.className = 'e';
+                button.id = i;
+                div.appendChild(button);
+                $('.gameboard').append(div);
+            }
+        }
+
+        hub.client.replayParse = function (replay, moves) {
+            var obj = jQuery.parseJSON(replay);
+
+            for (var i = 0; i < moves; i++) {
+                var button = document.createElement('button');
+                button.className = 'moveButton btn btn-info';
+                button.id = i + 9;
+                button.innerHTML = i + 1;
+                $('.replay').append(button);
+            }
+
+            movesArray = obj;
+        };
+        hub.client.updateGameboard = function (data) {
+            var gameboard = jQuery.parseJSON(data);
+
+            for (var i = 0; i < 9; i++) {
+                if (gameboard[i] == 0) draw = false;
+                $('[id="' + i + '"]').attr('class', cells[gameboard[i]]);
+            }
+        }
+        hub.client.gameInform = function (playerInfo)
+        {
+            isFinished = false;
+            gameStarted = true;
+            player = playerInfo;
+
+            $(".alert").remove();
+            var p = document.createElement('div');
+            p.setAttribute('class', 'alert alert-info');
+            p.innerHTML = 'Игра начинается! Ваша фигура: ' + (playerInfo ? 'крестик' : 'нолик');
+            $('.message').append(p);
+        }
+        hub.client.gameFinished = function (hash, result)
+        {
+            $(".alert").remove();
+            var link = 'Ссылка на запись игры: <a href="http://' + window.location.host + '/?replay=' + hash + '" target=_blank>тык</a>';
+            if (result == 3)
+            {
+                var p = document.createElement('div');
+                p.setAttribute('class', 'alert alert-warning');
+                p.innerHTML = 'Ничья. '+link;
+                $('.message').append(p);
+            }
+            else
+            {
+                var winner = result == 1 ? true : false;
+                var p = document.createElement('div');
+                if (player == winner)
+                {
+                    p.setAttribute('class', 'alert alert-success');
+                    p.innerHTML = "Игра окончена! Вы победили. " + link;
+                }
+                else
+                {
+                    p.setAttribute('class', 'alert alert-danger');
+                    p.innerHTML = "Игра окончена! Вы проиграли. " + link;
+                }
+                $('.message').append(p);
+            }
+            isFinished = true;
+            gameStarted = false;
+            $('[id="startButton"]').prop('disabled', false);
+        }
+
+        $(document).on('click', 'button', function () {
+            if (this.id == "" || !$.isNumeric(this.id)) return;
+            if (this.id > 8) {
+                var count = this.id - 8;
+                for (var i = 0; i < 9; i++)
+                    $('[id="' + i + '"]').attr('class', 'e');
+
+                for (var i = 0; i < count; i++) {
+                    $('[id="' + movesArray[i] + '"]').attr('class', css[i % 2]);
+                }
+                return;
+            }
+
+            if (isFinished || !gameStarted) return;
+            $('[id="' + this.id + '"]').attr("class", player ? 'x' : 'o');
+
+            hub.server.requestMove(this.id);
+        });
+
+
+        $(window).resize(function () {
+            $('.gameboard').css({ 'height': $('.gameboard').width() + 'px' });
+        });
+
+        //Со stackoverflow'лено
+        function getParameterByName(name, url) {
+            if (!url) url = window.location.href;
+            name = name.replace(/[\[\]]/g, "\\$&");
+            var regex = new RegExp("[?&]" + name + "(=([^&#]*)|&|#|$)"),
+                results = regex.exec(url);
+            if (!results) return null;
+            if (!results[2]) return '';
+            return decodeURIComponent(results[2].replace(/\+/g, " "));
+        }
+
+        function changePlayer()
+        {
+            if (!gameStarted || (gameStarted && isFinished))  
+            {
+                mode = ++mode % 3;
+                $('[id="playerButton"]').attr('class', 'btn-head btn-player ' + css[mode]);
+            }
+        }
+
+        function startNewGame() {
+            if (gameStarted) return;
+            hub.server.requestNewGame(mode == 2 ? true : false, mode == 0 ? true : false);
+            $('[id="startButton"]').prop('disabled', true);
+
+            for (var i = 0; i < 9; i++) {
+                $('[id="' + i + '"]').attr('class', 'e');
+            }
+        }
+    </script>
+
+    <div class="gameboard">
+
+    </div>
+
+    <div class="replay">
+    </div>
